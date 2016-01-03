@@ -1,0 +1,82 @@
+#! /bin/sh
+
+source $(dirname $0)/panel_config
+
+convertsecs() 
+{
+    x=`expr $1 / 1000000`
+    s=`expr $x % 60`
+    x=`expr $x / 60`
+    m=`expr $x % 60`
+    printf "%02d:%02d\n" $m $s
+}
+
+volume(){
+    VOLUME=$(pulseaudio-ctl full-status | awk '{split($0, array, " ")} END{print array[1]}')
+    MUTE=$(pulseaudio-ctl full-status | awk '{split($0, array, " ")} END{print array[2]}')
+    if [ "$MUTE" == "yes" ]; then
+        echo "%{F$RED_COLOR A:pulseaudio-ctl mute:}$(printf '%b' "\ue04f") $VOLUME%{A F-}"
+    else echo "%{F$GREEN_COLOR A:pulseaudio-ctl mute:}$(printf '%b' "\ue0e1")%{F-} $VOLUME%{A}"
+    fi
+}
+
+mpd(){
+    STATUS=$(mpc current)
+    if [ "$STATUS" != "" ]; then
+        echo "%{F$GREEN_COLOR A:mpc toggle: A3:mpc stop:}$(printf '%b' "\ue205")%{F-} $STATUS%{A A}"
+    else echo ""
+    fi
+}
+
+ethernet(){
+    LINK=$(ethtool enp8s0 | grep "Link detected:" | sed s/"Link detected:"// | xargs)
+    if [ "$LINK" = "yes" ]; then
+        echo "%{F$GREEN_COLOR}$(printf '%b' "\ue1af")%{F-} Connected"
+    else echo "%{F$RED_COLOR}$(printf '%b' "\ue1af")%{F-} Disconnected"
+    fi
+}
+
+temperature() {
+    CPU_TEMP=$(sensors | grep "temp1" | cut -d$' ' -f9)
+    CPU_TEMP_TRUNC=$(sensors | grep "temp1" | cut -d+ -f2 | cut -d. -f1)
+    if [ $CPU_TEMP_TRUNC -lt 90 ]; then
+        echo "%{F$GREEN_COLOR}$(printf '%b' "\ue0c9")%{F-} $CPU_TEMP"
+   else echo "%{F$RED_COLOR}$(printf '%b' "\ue0c9") $CPU_TEMP%{F-}"
+   fi
+}
+
+load_avg() {
+    AVGLOAD=$(cut -d " " -f 1-3 /proc/loadavg)
+    echo "%{F$GREEN_COLOR}$(printf '%b' "\ue100")%{F-} $AVGLOAD"
+}
+
+transmission() {
+    ACTIVETORR=$(transmission-remote -l | egrep '(Downloading|Up & Down)' | wc -l)
+    echo "%{F$GREEN_COLOR}$(printf '%b' "\ue0d5")%{F-} $ACTIVETORR"
+}
+
+clementine() {
+    QDBUS=/usr/lib/qt4/bin/qdbus
+    POS=$($QDBUS org.mpris.MediaPlayer2.clementine /org/mpris/MediaPlayer2 org.freedesktop.DBus.Properties.Get org.mpris.MediaPlayer2.Player Position)
+    NP=$($QDBUS org.mpris.clementine /Player org.freedesktop.MediaPlayer.GetMetadata | grep -e "^title:" -e "^artist:" | sed -e '1s/$/ \-/' | cut -d " " -f2- | paste -d " " - -)
+    TOT=$($QDBUS org.mpris.MediaPlayer2.clementine /org/mpris/MediaPlayer2 org.freedesktop.DBus.Properties.Get org.mpris.MediaPlayer2.Player Metadata | grep "^mpris:length" | awk '{print $2}')
+
+    if [[ ${NP} == "" ]]; then
+        echo ""
+    else
+        echo "%{F$GREEN_COLOR}$(printf '%b' "\ue0ed")%{F-} $NP | $(convertsecs $POS)/$(convertsecs $TOT)"
+    fi
+}
+
+pacman_query() {
+    PACKAGES=$(pacman -Qu | wc -l)
+    if [ $PACKAGES -le 50 ]; then  
+        echo "%{F$GREEN_COLOR}$(printf '%b' "\ue0de")%{F-} $PACKAGES"
+    else echo "%{F$RED_COLOR}$(printf '%b' "\ue0de") $PACKAGES%{F-}"
+    fi
+}
+
+while :; do
+    echo "S%{c}$(clementine) %{r}$(load_avg) $SEP $(temperature) $SEP $(transmission) $SEP $(ethernet) $SEP $(pacman_query) $SEP $(volume) $SEP %{F$GREEN_COLOR}$(printf '%b' "\ue1a2")%{F-} $(date +'%A, %b %d') $SEP %{F$GREEN_COLOR}$(printf '%b' "\ue016")%{F-} $(date +'%H:%M')"
+    sleep 1
+done
